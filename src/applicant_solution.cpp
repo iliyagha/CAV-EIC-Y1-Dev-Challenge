@@ -6,8 +6,25 @@
 #include <vector>
 #include <set>
 #include <cmath>
+#include <cstdio> //DEBUG
 
 namespace {
+    // ===== DEBUG ====
+    constexpr bool DEBUG_LOG = true; // true to show, false to silence
+    int debugStep = 0;
+
+    void logMove(size_t antIdx, const char *action, Coord from, int energyBefore,
+        bool carryingBefore, const Ant &ant) {
+        if (!DEBUG_LOG) return;
+        int spent = energyBefore - ant.energy;
+        std::printf("[step %3d] ant %zu %-12s (%2d, %2d)->(%2d, %2d) energy %3d -> %3d (spent %2d)%s%s\n",
+            debugStep, antIdx, action, from.first, from.second, ant.position.first, ant.position.second,
+            energyBefore, ant.energy, spent,
+            ant.carryingFood ? " [carrying]" : "", //Check if ant is carrying food, print if it is
+            (spent == 0 && ant.energy > 0 && ant.carryingFood == carryingBefore) ? " <-- STUCK (no move made)" : "");
+    }
+    // ==== END DEBUG ====
+
     // Shared colony memory, persists across forage() calls
     std::set<Coord> knownFood;
 
@@ -52,22 +69,37 @@ void AntWorld::forage() {
     int rows = (int)this->terrainMap.size();
     int cols = (int)this->terrainMap[0].size();
     ensureVisitedInitialized(rows, cols);
+    debugStep++; // DEBUG: count steps
 
     for (auto &ant : this->ants) {
         // Mark current cell explored
         visited[ant.position.first][ant.position.second] = true;
+
+        // DEBUG: snapshot before this ant acts
+        size_t antIdx = &ant - &this->ants[0];
+        Coord startPos = ant.position;
+        int startEnergy = ant.energy;
+        bool startCarrying = ant.carryingFood;
 
         // --- SAFETY OVERRIDE: always protect the ability to get home ---
         int costHome = calculatePathCost(this->terrainMap,
             shortestPath(this->terrainMap, ant.position, this->homeCoordinates));
         if (ant.energy <= costHome) {
             ant.returnHome(this->terrainMap, this->foodMap);
+
+            // DEBUG: if this ant is returning home for safety, log it
+            logMove(antIdx, "safety-home", startPos, startEnergy, startCarrying, ant);
+
             continue;
         }
 
         // --- Already carrying food: bring it home ---
         if (ant.carryingFood) {
             ant.returnHome(this->terrainMap, this->foodMap);
+
+            // DEBUG: if this ant is bringing food home log it
+            logMove(antIdx, "deliver", startPos, startEnergy, startCarrying, ant);
+
             continue;
         }
 
@@ -87,12 +119,20 @@ void AntWorld::forage() {
 
         if (bestFood.first != -1) {
             ant.move(this->terrainMap, bestFood, this->foodMap);
+
+            // DEBUG: if the ant is getting food log it
+            logMove(antIdx, "get-food", startPos, startEnergy, startCarrying, ant);
+
             continue;
         }
 
         // --- Otherwise, explore ---
         Coord target = pickExploreTarget(ant, rows, cols);
         ant.move(this->terrainMap, target, this->foodMap);
+
+        // DEBUG: ant is doing no other move so log that it is
+        logMove(antIdx, "explore", startPos, startEnergy, startCarrying, ant);
+
     }
 }
 
