@@ -13,6 +13,7 @@ namespace {
     constexpr bool DEBUG_LOG = true; // true to show, false to silence
     int debugStep = 0;
 
+    // Print function used for debugging (only activated when DEBUG_LOG = true)
     void logMove(size_t antIdx, const char *action, Coord from, int energyBefore,
         bool carryingBefore, const Ant &ant) {
         if (!DEBUG_LOG) return;
@@ -66,11 +67,13 @@ namespace {
  * here are some existing examples of how calling these functions works to help get you started!
  */
 void AntWorld::forage() {
+    // Gets length and height of the terrain
     int rows = (int)this->terrainMap.size();
     int cols = (int)this->terrainMap[0].size();
     ensureVisitedInitialized(rows, cols);
     debugStep++; // DEBUG: count steps
 
+    // For-loop that iterates for EVERY ant
     for (auto &ant : this->ants) {
         // Mark current cell explored
         visited[ant.position.first][ant.position.second] = true;
@@ -107,16 +110,21 @@ void AntWorld::forage() {
         for (auto &f : ant.foodScan(this->foodMap)) knownFood.insert(f);
         // TODO: also fold in phermoneScan results if you want phermone-based coordination
 
+        // determineBestFood() would replace THIS function here
+
         // --- Is there known, reachable food? Go get the nearest one ---
-        Coord bestFood = {-1, -1};
+        Coord bestFood = {-1, -1}; // Initializes farthest setting for food as default
         int bestDist = INT32_MAX;
         for (auto &f : knownFood) {
-            if (this->foodMap[f.first][f.second] != 1) continue; // already taken
-            if (!canAffordRoundTrip(ant, this->terrainMap, f, this->homeCoordinates)) continue;
-            int dist = std::abs(f.first - ant.position.first) + std::abs(f.second - ant.position.second);
-            if (dist < bestDist) { bestDist = dist; bestFood = f; }
+            if (this->foodMap[f.first][f.second] != 1) continue; // already taken; food is absent if the location contains 0
+            if (!canAffordRoundTrip(ant, this->terrainMap, f, this->homeCoordinates)) continue; // If ant can't make it back with the food,
+            int dist = std::abs(f.first - ant.position.first) + std::abs(f.second - ant.position.second); // Compares ant to next food
+            if (dist < bestDist) { bestDist = dist; bestFood = f; } // Saves it as best if it is the closest
         }
 
+        // With it ENDING HERE
+
+        // This makes it go to the best food
         if (bestFood.first != -1) {
             ant.move(this->terrainMap, bestFood, this->foodMap);
 
@@ -137,3 +145,41 @@ void AntWorld::forage() {
 }
 
 /** You may insert any custom functions below **/
+
+// Function to find the best food using the shortestPath() function (takes into account energy based off terrain and distance)
+Coord determineBestFood(Ant &ant, MapTemplate &terrainMap, MapTemplate &foodMap, Coord homeCoordinates)
+{
+    // Initialize best food and best cost as far as possible as a placeholder
+    Coord bestFood = {-1, -1};
+    int bestCost = INT32_MAX;
+
+    // Go over every known food
+    for(auto &f : knownFood)
+    {
+        // Check if the food is still there; ignore if not
+        if(foodMap[f.first][f.second] != 1)
+            continue;
+
+        // Find its shortest path home using the built-in function
+        auto pathToFood = shortestPath(terrainMap, ant.position, f);
+
+        // Find its shortest path home in the same manner
+        auto pathToHome = shortestPath(terrainMap, f, homeCoordinates);
+
+        // Calculate the amount of energy required for the trip
+        int cost = calculatePathCost(terrainMap, pathToFood) + calculatePathCost(terrainMap, pathToHome);
+
+        // Make sure the ant can actually do the trip; ignore if not
+        if(cost >= ant.energy)
+            continue;
+
+        // Now actually check if this is the best food so far; switch it if so
+        if(cost < bestCost)
+        {
+            bestCost = cost;
+            bestFood = f;
+        }
+    }
+
+    return bestFood;
+}
