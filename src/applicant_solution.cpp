@@ -13,7 +13,7 @@
 
 namespace {
     // ===== DEBUG ====
-    constexpr bool DEBUG_LOG = true; // true to show, false to silence
+    constexpr bool DEBUG_LOG = false; // true to show, false to silence
     int debugStep = 0;
 
     // Print function used for debugging (only activated when DEBUG_LOG = true)
