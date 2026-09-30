@@ -38,7 +38,7 @@ namespace {
 
     void ensureVisitedInitialized( int rows, int cols) {
         if (visited.empty()) {
-            visited.assign(rows, std::vector<bool>(cols, false));
+            visited.assign(rows, std::vector<bool>(cols, false)); // Initialize a vector of vectors with all false
         }
     }
 
@@ -206,9 +206,40 @@ namespace {
         return bestFood;
     }
 
+    // If an ant's order didn't move it (e.g. 1 energy left but next step on its path costs 2),
+    // spend its remaining energy on a neighbouring cell that is affordable. Ants are removed at exactly 0 energy
+    // so without this function an ant keeps the game running until the step limit meaning the game never ends
+    // Carrying ants step onto home if they can afford it, so the food still scores
+    void spendLeftoverEnergy(Ant &ant, MapTemplate &terrainMap, MapTemplate &foodMap, Coord home) {
+        // Similar methods to pathCost
+        int rows = (int)terrainMap.size();
+        int cols = (int)terrainMap[0].size();
+        const int dr[4] = {-1, 1, 0, 0};
+        const int dc[4] = {0, 0, -1, 1};
+
+        Coord target = {-1, -1};
+        // Check all four directions from current position
+        for (int i = 0; i < 4; ++i) {
+            int nr = ant.position.first + dr[i]; // next row
+            int nc = ant.position.second + dc[i]; // next coloumn
+            // Make sure ant does not leave map
+            if (nr < 0 || nr >= rows || nc < 0 || nc >= cols ) continue;
+
+
+            // Neighbouring cells are always inside the ant's view, so using their real height is always allowed
+            int stepCost = 1 + std::abs(terrainMap[ant.position.first][ant.position.second] - terrainMap[nr][nc]);
+            if (stepCost > ant.energy) continue; // Unable to make this step
+
+            if (ant.carryingFood && Coord(nr, nc) == home) {
+                target = home; break; // Deliver if possible
+            }
+            if (target.first == -1) target = {nr,nc};
+            }
+        if (target.first != -1) ant.move(terrainMap, target, foodMap);
+        }
+
+
     // Pick some unvisited cell to explore
-    // // TODO: replace with something smarter than "first unvisited cell found"
-    // e.g. nearest unvisited cell, or a frontier/spiral pattern
     Coord pickExploreTarget(Ant &ant, int rows, int cols) {
         for (int r = 0; r < rows; r++) {
             for (int c = 0; c < cols; ++c) {
@@ -247,13 +278,16 @@ void AntWorld::forage() {
         // --- 1. Scanning is free, so every ant scans at every step ---
         updateKnownFoodFromScan(ant, this->foodMap, rows, cols);
         updateKnownTerrainFromScan(ant, rows, cols);
-        // TODO: we can still fold in pheromoneScan results if we find an optimal use
 
 
         // --- 2. Already carrying food: bring it home ---
         // If energy runs out on the way home, food is dropped closer to home (and remembered in knownFood)
         if (ant.carryingFood) {
             ant.returnHome(this->terrainMap, this->foodMap);
+            // If the order changed nothing (stuck), spend leftover energy so ant can't stall the game
+            if (ant.position == startPos && ant.energy == startEnergy && ant.carryingFood == startCarrying) {
+                spendLeftoverEnergy(ant, this->terrainMap, this->foodMap, this->homeCoordinates);
+            }
             recordMoveResult(ant, startCarrying, this->homeCoordinates);
 
             // DEBUG: if this ant is bringing food home log it
@@ -279,6 +313,11 @@ void AntWorld::forage() {
         // Go to the chosen food (move() picks it up on arrival)
         if (bestFood.first != -1) {
             ant.move(this->terrainMap, bestFood, this->foodMap);
+
+            // If the order changed nothing (stuck), spend leftover energy so ant can't stall the game
+            if (ant.position == startPos && ant.energy == startEnergy && ant.carryingFood == startCarrying) {
+                spendLeftoverEnergy(ant, this->terrainMap, this->foodMap, this->homeCoordinates);
+            }
             recordMoveResult(ant, startCarrying, this->homeCoordinates);
 
             // DEBUG: if the ant is getting food log it
@@ -290,6 +329,11 @@ void AntWorld::forage() {
         // --- 5. Otherwise, explore ---
         Coord target = pickExploreTarget(ant, rows, cols);
         ant.move(this->terrainMap, target, this->foodMap);
+
+        // If the order changed nothing (stuck), spend leftover energy so ant can't stall the game
+        if (ant.position == startPos && ant.energy == startEnergy && ant.carryingFood == startCarrying) {
+            spendLeftoverEnergy(ant, this->terrainMap, this->foodMap, this->homeCoordinates);
+        }
         recordMoveResult(ant, startCarrying, this->homeCoordinates);
 
         // DEBUG: ant is doing no other move so log that it is
